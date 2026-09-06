@@ -5,6 +5,11 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <link rel="manifest" href="manifest.json">
   <meta name="theme-color" content="#9b6bc4">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="Manhwa Tracker">
+  <link rel="apple-touch-icon" href="icon-192.png">
 <title>Manhwa Tracker</title>
 <style>
   :root {
@@ -116,7 +121,7 @@
       <option value="Dropped">Dropped</option>
     </select>
     <button onclick="openModal()">＋ Add Manhwa</button>
-    <button id="installBtn" class="secondary" onclick="installApp()" style="display:none">📲 Install App</button>
+    <button id="installBtn" class="secondary" onclick="installApp()">📲 Install App</button>
     <span id="installStatus" class="meta" style="align-self:center"></span>
   </div>
 
@@ -313,32 +318,65 @@ function deleteManhwa(id) {
 render();
 </script>
 
+
 <script>
 let deferredInstallPrompt = null;
 const installBtn = document.getElementById("installBtn");
 const installStatus = document.getElementById("installStatus");
 
-window.addEventListener("beforeinstallprompt", (event) => {
+function isStandalone() {
+  return window.matchMedia("(display-mode: standalone)").matches ||
+         window.navigator.standalone === true;
+}
+
+function refreshInstallUI() {
+  if (!installBtn) return;
+  if (isStandalone()) {
+    installBtn.style.display = "none";
+    if (installStatus) installStatus.textContent = "App installed";
+  } else {
+    installBtn.style.display = "inline-block";
+  }
+}
+
+window.addEventListener("beforeinstallprompt", event => {
   event.preventDefault();
   deferredInstallPrompt = event;
-  if (installBtn) installBtn.style.display = "inline-block";
-  if (installStatus) installStatus.textContent = "";
+  refreshInstallUI();
 });
 
 async function installApp() {
-  if (!deferredInstallPrompt) return;
-  deferredInstallPrompt.prompt();
-  const choice = await deferredInstallPrompt.userChoice;
-  deferredInstallPrompt = null;
-  if (installBtn) installBtn.style.display = "none";
-  if (installStatus) installStatus.textContent =
-    choice.outcome === "accepted" ? "Installed!" : "";
+  if (isStandalone()) {
+    if (installStatus) installStatus.textContent = "App is already installed.";
+    return;
+  }
+
+  if (deferredInstallPrompt) {
+    deferredInstallPrompt.prompt();
+    const choice = await deferredInstallPrompt.userChoice;
+    deferredInstallPrompt = null;
+    if (installStatus) {
+      installStatus.textContent =
+        choice.outcome === "accepted" ? "Installing…" : "Installation cancelled.";
+    }
+    return;
+  }
+
+  const ua = navigator.userAgent.toLowerCase();
+  if (ua.includes("iphone") || ua.includes("ipad")) {
+    alert("On iPhone/iPad: tap the Share button, then choose “Add to Home Screen”.");
+  } else {
+    alert("In Chrome, open the browser menu (⋮) and choose “Install app” or “Add to Home screen”. If it is not shown yet, refresh once and try again.");
+  }
 }
 
 window.addEventListener("appinstalled", () => {
-  if (installBtn) installBtn.style.display = "none";
+  deferredInstallPrompt = null;
+  refreshInstallUI();
   if (installStatus) installStatus.textContent = "Installed!";
 });
+
+window.addEventListener("DOMContentLoaded", refreshInstallUI);
 
 if ("serviceWorker" in navigator) {
   window.addEventListener("load", async () => {
