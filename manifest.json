@@ -1,0 +1,18 @@
+{
+  "name": "My Manhwa Tracker",
+  "short_name": "Manhwa Tracker",
+  "description": "Track manhwa, ratings, notes, reading status, and covers offline.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#f7f3f8",
+  "theme_color": "#9b6bc4",
+  "lang": "en",
+  "categories": [
+    "books",
+    "entertainment",
+    "productivity"
+  ],
+  "icons": []
+}

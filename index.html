@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#9b6bc4">
+<title>Manhwa Tracker</title>
+<style>
+  :root {
+    --bg: #f7f3f8;
+    --card: #fff;
+    --text: #29232d;
+    --muted: #817786;
+    --accent: #9b6bc4;
+    --accent2: #e9d9f5;
+    --border: #eadfea;
+    --danger: #d85c70;
+    --shadow: 0 10px 30px rgba(75, 42, 91, .08);
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; font-family: Inter, system-ui, -apple-system, Segoe UI, sans-serif;
+    background: var(--bg); color: var(--text);
+  }
+  header {
+    background: linear-gradient(135deg, #8e62b6, #c08bd4);
+    color: white; padding: 30px 20px;
+  }
+  .header-inner { max-width: 1100px; margin: auto; }
+  h1 { margin: 0 0 6px; font-size: clamp(28px, 5vw, 42px); }
+  header p { margin: 0; opacity: .9; }
+  main { max-width: 1100px; margin: 24px auto; padding: 0 18px 50px; }
+  .toolbar { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 20px; }
+  input, textarea, select, button {
+    font: inherit; border-radius: 10px; border: 1px solid var(--border);
+  }
+  input, textarea, select {
+    background: white; padding: 11px 12px; color: var(--text);
+  }
+  #search { flex: 1; min-width: 210px; }
+  button {
+    cursor: pointer; padding: 11px 16px; background: var(--accent); color: white;
+    border: none; font-weight: 600;
+  }
+  button.secondary { background: white; color: var(--accent); border: 1px solid var(--accent2); }
+  button.danger { background: #fff0f2; color: var(--danger); }
+  .stats {
+    display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 22px;
+  }
+  .stat { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 15px; box-shadow: var(--shadow); }
+  .stat b { display: block; font-size: 24px; color: var(--accent); }
+  .stat span { color: var(--muted); font-size: 13px; }
+  .grid {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 18px;
+  }
+  .card {
+    background: var(--card); border: 1px solid var(--border); border-radius: 16px;
+    overflow: hidden; box-shadow: var(--shadow); display: flex; flex-direction: column;
+  }
+  .cover { width: 100%; aspect-ratio: 3/4; object-fit: cover; background: var(--accent2); }
+  .placeholder {
+    width: 100%; aspect-ratio: 3/4; display: grid; place-items: center;
+    color: var(--accent); font-size: 44px; background: linear-gradient(145deg,#f0e3f6,#e2cdef);
+  }
+  .card-body { padding: 14px; display: flex; flex-direction: column; gap: 9px; }
+  .title { font-weight: 750; font-size: 18px; }
+  .meta { color: var(--muted); font-size: 13px; }
+  .stars { color: #f0a72e; letter-spacing: 1px; font-size: 17px; }
+  .notes {
+    color: #5f5664; font-size: 13px; line-height: 1.45;
+    white-space: pre-wrap; max-height: 62px; overflow: hidden;
+  }
+  .actions { display: flex; gap: 7px; margin-top: 4px; }
+  .actions button { flex: 1; padding: 9px; font-size: 13px; }
+  .empty {
+    text-align: center; padding: 55px 20px; color: var(--muted);
+    background: white; border: 1px dashed var(--border); border-radius: 16px;
+  }
+  dialog {
+    width: min(520px, calc(100% - 28px)); border: none; border-radius: 18px;
+    padding: 0; box-shadow: 0 25px 80px rgba(40,20,50,.25);
+  }
+  dialog::backdrop { background: rgba(38, 24, 43, .5); }
+  .modal { padding: 22px; }
+  .modal h2 { margin-top: 0; }
+  .form { display: grid; gap: 12px; }
+  label { font-size: 13px; font-weight: 650; }
+  .field { display: grid; gap: 6px; }
+  textarea { min-height: 110px; resize: vertical; }
+  .preview { width: 90px; height: 120px; object-fit: cover; border-radius: 8px; display:none; }
+  .modal-actions { display:flex; justify-content:flex-end; gap:8px; margin-top:16px; }
+  @media (max-width: 650px) {
+    .stats { grid-template-columns: repeat(2, 1fr); }
+    .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+    .card-body { padding: 11px; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <div class="header-inner">
+    <h1>📚 My Manhwa Tracker</h1>
+    <p>Keep track of what you read, rate your favorites, and save your thoughts.</p>
+  </div>
+</header>
+
+<main>
+  <div class="toolbar">
+    <input id="search" placeholder="Search your manhwa..." oninput="render()">
+    <select id="filter" onchange="render()">
+      <option value="all">All statuses</option>
+      <option value="Reading">Reading</option>
+      <option value="Completed">Completed</option>
+      <option value="Plan to Read">Plan to Read</option>
+      <option value="Dropped">Dropped</option>
+    </select>
+    <button onclick="openModal()">＋ Add Manhwa</button>
+    <button id="installBtn" class="secondary" onclick="installApp()" style="display:none">📲 Install App</button>
+    <span id="installStatus" class="meta" style="align-self:center"></span>
+  </div>
+
+  <div class="stats">
+    <div class="stat"><b id="total">0</b><span>Total</span></div>
+    <div class="stat"><b id="reading">0</b><span>Reading</span></div>
+    <div class="stat"><b id="completed">0</b><span>Completed</span></div>
+    <div class="stat"><b id="average">0.0</b><span>Average rating</span></div>
+  </div>
+
+  <div id="grid" class="grid"></div>
+</main>
+
+<dialog id="modal">
+  <div class="modal">
+    <h2 id="modalTitle">Add Manhwa</h2>
+    <form class="form" onsubmit="saveManhwa(event)">
+      <input type="hidden" id="editId">
+      <div class="field">
+        <label>Title</label>
+        <input id="title" required placeholder="e.g. Omniscient Reader">
+      </div>
+      <div class="field">
+        <label>Status</label>
+        <select id="status">
+          <option>Reading</option>
+          <option>Completed</option>
+          <option>Plan to Read</option>
+          <option>Dropped</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Rating</label>
+        <select id="rating">
+          <option value="0">No rating</option>
+          <option value="1">⭐ 1/5</option>
+          <option value="2">⭐⭐ 2/5</option>
+          <option value="3">⭐⭐⭐ 3/5</option>
+          <option value="4">⭐⭐⭐⭐ 4/5</option>
+          <option value="5">⭐⭐⭐⭐⭐ 5/5</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Notes</label>
+        <textarea id="notes" placeholder="Your thoughts, favorite characters, quotes, etc."></textarea>
+      </div>
+      <div class="field">
+        <label>Manhwa cover</label>
+        <input id="cover" type="file" accept="image/*" onchange="previewCover(event)">
+        <img id="preview" class="preview" alt="Cover preview">
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="secondary" onclick="closeModal()">Cancel</button>
+        <button type="submit">Save Manhwa</button>
+      </div>
+    </form>
+  </div>
+</dialog>
+
+<script>
+const KEY = "manhwaTracker_v1";
+let manhwa = JSON.parse(localStorage.getItem(KEY) || "[]");
+
+function saveData() {
+  localStorage.setItem(KEY, JSON.stringify(manhwa));
+}
+
+function stars(n) {
+  return n ? "★".repeat(n) + "☆".repeat(5-n) : "Not rated";
+}
+
+function render() {
+  const q = document.getElementById("search").value.toLowerCase().trim();
+  const f = document.getElementById("filter").value;
+  const items = manhwa.filter(m =>
+    m.title.toLowerCase().includes(q) && (f === "all" || m.status === f)
+  );
+
+  document.getElementById("total").textContent = manhwa.length;
+  document.getElementById("reading").textContent = manhwa.filter(m => m.status === "Reading").length;
+  document.getElementById("completed").textContent = manhwa.filter(m => m.status === "Completed").length;
+  const rated = manhwa.filter(m => Number(m.rating) > 0);
+  document.getElementById("average").textContent = rated.length
+    ? (rated.reduce((a,m)=>a+Number(m.rating),0)/rated.length).toFixed(1) : "0.0";
+
+  const grid = document.getElementById("grid");
+  if (!items.length) {
+    grid.innerHTML = `<div class="empty" style="grid-column:1/-1">
+      <h3>${manhwa.length ? "No matching manhwa" : "Your tracker is empty 📖"}</h3>
+      <p>${manhwa.length ? "Try another search or status." : "Click “Add Manhwa” to start your collection."}</p>
+    </div>`;
+    return;
+  }
+
+  grid.innerHTML = items.map(m => `
+    <article class="card">
+      ${m.cover
+        ? `<img class="cover" src="${m.cover}" alt="${escapeHtml(m.title)} cover">`
+        : `<div class="placeholder">📖</div>`}
+      <div class="card-body">
+        <div class="title">${escapeHtml(m.title)}</div>
+        <div class="meta">${escapeHtml(m.status)}</div>
+        <div class="stars">${stars(Number(m.rating))}</div>
+        ${m.notes ? `<div class="notes">${escapeHtml(m.notes)}</div>` : ""}
+        <div class="actions">
+          <button class="secondary" onclick="editManhwa('${m.id}')">Edit</button>
+          <button class="danger" onclick="deleteManhwa('${m.id}')">Delete</button>
+        </div>
+      </div>
+    </article>
+  `).join("");
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({
+    "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"
+  }[c]));
+}
+
+function openModal(id = null) {
+  document.getElementById("modal").showModal();
+  document.getElementById("editId").value = id || "";
+  document.getElementById("modalTitle").textContent = id ? "Edit Manhwa" : "Add Manhwa";
+  document.getElementById("preview").style.display = "none";
+  document.getElementById("cover").value = "";
+
+  if (id) {
+    const m = manhwa.find(x => x.id === id);
+    document.getElementById("title").value = m.title;
+    document.getElementById("status").value = m.status;
+    document.getElementById("rating").value = m.rating;
+    document.getElementById("notes").value = m.notes || "";
+    if (m.cover) {
+      const p = document.getElementById("preview");
+      p.src = m.cover; p.style.display = "block";
+    }
+  } else {
+    document.querySelector("form").reset();
+  }
+}
+
+function closeModal() {
+  document.getElementById("modal").close();
+}
+
+function previewCover(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    const p = document.getElementById("preview");
+    p.src = e.target.result; p.style.display = "block";
+  };
+  reader.readAsDataURL(file);
+}
+
+function saveManhwa(event) {
+  event.preventDefault();
+  const id = document.getElementById("editId").value;
+  const old = id ? manhwa.find(m => m.id === id) : null;
+  const file = document.getElementById("cover").files[0];
+
+  const finish = cover => {
+    const item = {
+      id: id || crypto.randomUUID(),
+      title: document.getElementById("title").value.trim(),
+      status: document.getElementById("status").value,
+      rating: Number(document.getElementById("rating").value),
+      notes: document.getElementById("notes").value.trim(),
+      cover: cover || (old ? old.cover : "")
+    };
+    if (id) manhwa = manhwa.map(m => m.id === id ? item : m);
+    else manhwa.unshift(item);
+    saveData(); closeModal(); render();
+  };
+
+  if (file) {
+    const reader = new FileReader();
+    reader.onload = e => finish(e.target.result);
+    reader.readAsDataURL(file);
+  } else finish("");
+}
+
+function editManhwa(id) { openModal(id); }
+
+function deleteManhwa(id) {
+  const m = manhwa.find(x => x.id === id);
+  if (confirm(`Delete "${m.title}" from your tracker?`)) {
+    manhwa = manhwa.filter(x => x.id !== id);
+    saveData(); render();
+  }
+}
+
+render();
+</script>
+
+<script>
+let deferredInstallPrompt = null;
+const installBtn = document.getElementById("installBtn");
+const installStatus = document.getElementById("installStatus");
+
+window.addEventListener("beforeinstallprompt", (event) => {
+  event.preventDefault();
+  deferredInstallPrompt = event;
+  if (installBtn) installBtn.style.display = "inline-block";
+  if (installStatus) installStatus.textContent = "";
+});
+
+async function installApp() {
+  if (!deferredInstallPrompt) return;
+  deferredInstallPrompt.prompt();
+  const choice = await deferredInstallPrompt.userChoice;
+  deferredInstallPrompt = null;
+  if (installBtn) installBtn.style.display = "none";
+  if (installStatus) installStatus.textContent =
+    choice.outcome === "accepted" ? "Installed!" : "";
+}
+
+window.addEventListener("appinstalled", () => {
+  if (installBtn) installBtn.style.display = "none";
+  if (installStatus) installStatus.textContent = "Installed!";
+});
+
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", async () => {
+    try {
+      const registration = await navigator.serviceWorker.register("./sw.js");
+      registration.update();
+    } catch (error) {
+      console.log("Service worker registration failed:", error);
+    }
+  });
+}
+</script>
+
+</body>
+</html>
