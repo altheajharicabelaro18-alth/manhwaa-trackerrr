@@ -1,33 +1,37 @@
-# My Manhwa Tracker — Installable GitHub Pages PWA
+# My Manhwa Tracker — PWA + Account Sync
 
-This version includes:
-- 192×192 and 512×512 PWA icons
-- maskable Android icon
-- install button with browser fallback instructions
-- service worker for offline use
-- GitHub Pages-compatible relative paths
-- localStorage-based manhwa data
+Features:
+- Reading status: Reading, Completed, Plan to Read, Dropped
+- Publication status: 🟢 Ongoing, 🔵 Finished, 🟡 Hiatus, ⚪ Unknown
+- Online publication-status lookup using AniList
+- Email/password sign-in
+- Cloud sync with Supabase (when configured)
+- LocalStorage fallback when Supabase is not configured
+- PWA install/offline support
 
-## Replace your current GitHub files
-Upload these files to the repository root and replace the old versions:
+## Enable sign-in and cloud storage
 
-- index.html
-- manifest.json
-- sw.js
-- icon-192.png
-- icon-512.png
-- icon-maskable-512.png
-- .nojekyll (optional but included)
-- README.md
+1. Create a project in Supabase.
+2. In Supabase, open **SQL Editor** and run `supabase_schema.sql`.
+3. Open **Project Settings → API** and copy the Project URL and public anon key.
+4. Put them into `config.js`:
+   - `SUPABASE_URL`
+   - `SUPABASE_ANON_KEY`
+5. Deploy the folder to GitHub Pages (or another static host).
+6. In Supabase Authentication settings, configure the email confirmation/redirect URL for your deployed site if needed.
 
-Then wait for GitHub Pages to redeploy.
+The browser only needs the public anon key. Do NOT put a `service_role` key in `config.js`.
 
-## Android / Chrome
-Open the GitHub Pages site in Chrome. Tap **📲 Install App**.
-If Chrome does not show its native prompt yet, use the Chrome menu (⋮) and choose
-**Install app** or **Add to Home screen**.
+## Publication status
 
-## iPhone / iPad
-Open the site in Safari, tap **Share**, then **Add to Home Screen**.
+The **Check online** button searches AniList by title and maps:
+- RELEASING → Ongoing
+- FINISHED → Finished
+- HIATUS → Hiatus
+- Other/unmatched → Unknown
 
-The tracker stores entries locally in the browser/device. It does not cloud-sync between devices.
+Because not every manhwa is indexed, the status can also be selected manually.
+
+## Existing data
+
+Older local entries are kept in browser storage under the updated tracker key. When you sign in and save entries, they are synced to your Supabase account.

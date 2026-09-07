@@ -11,6 +11,8 @@
   <meta name="apple-mobile-web-app-title" content="Manhwa Tracker">
   <link rel="apple-touch-icon" href="icon-192.png">
 <title>Manhwa Tracker</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="./config.js"></script>
 <style>
   :root {
     --bg: #f7f3f8;
@@ -71,6 +73,18 @@
   .card-body { padding: 14px; display: flex; flex-direction: column; gap: 9px; }
   .title { font-weight: 750; font-size: 18px; }
   .meta { color: var(--muted); font-size: 13px; }
+  .badges { display:flex; flex-wrap:wrap; gap:6px; }
+  .badge { display:inline-flex; align-items:center; width:max-content; padding:5px 9px;
+    border-radius:999px; font-size:12px; font-weight:700; }
+  .badge.reading { background:#efe4f7; color:#70439a; }
+  .badge.ongoing { background:#e3f6e8; color:#23733a; }
+  .badge.finished { background:#e9eef7; color:#465a7b; }
+  .badge.hiatus { background:#fff1d8; color:#8a5b08; }
+  .badge.unknown { background:#f0edf1; color:#6d6470; }
+  .account { margin-left:auto; display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+  .account-email { color:var(--muted); font-size:13px; }
+  .status-row { display:flex; gap:8px; align-items:center; }
+  .status-row select { flex:1; }
   .stars { color: #f0a72e; letter-spacing: 1px; font-size: 17px; }
   .notes {
     color: #5f5664; font-size: 13px; line-height: 1.45;
@@ -120,8 +134,18 @@
       <option value="Plan to Read">Plan to Read</option>
       <option value="Dropped">Dropped</option>
     </select>
+    <select id="publicationFilter" onchange="render()">
+      <option value="all">All publication statuses</option>
+      <option value="ONGOING">🟢 Ongoing</option>
+      <option value="FINISHED">🔵 Finished</option>
+      <option value="HIATUS">🟡 Hiatus</option>
+      <option value="UNKNOWN">⚪ Unknown</option>
+    </select>
     <button onclick="openModal()">＋ Add Manhwa</button>
     <button id="installBtn" class="secondary" onclick="installApp()">📲 Install App</button>
+    <button id="authBtn" class="secondary" onclick="openAuthModal()">🔐 Sign in</button>
+    <span id="accountEmail" class="account-email"></span>
+    <button id="signOutBtn" class="secondary" style="display:none" onclick="signOut()">Sign out</button>
     <span id="installStatus" class="meta" style="align-self:center"></span>
   </div>
 
@@ -154,6 +178,19 @@
         </select>
       </div>
       <div class="field">
+        <label>Publication status</label>
+        <div class="status-row">
+          <select id="publicationStatus">
+            <option value="ONGOING">🟢 Ongoing</option>
+            <option value="FINISHED">🔵 Finished</option>
+            <option value="HIATUS">🟡 Hiatus</option>
+            <option value="UNKNOWN">⚪ Unknown</option>
+          </select>
+          <button type="button" class="secondary" onclick="lookupPublicationStatus()">Check online</button>
+        </div>
+        <span id="lookupStatus" class="meta">Checks AniList by title.</span>
+      </div>
+      <div class="field">
         <label>Rating</label>
         <select id="rating">
           <option value="0">No rating</option>
@@ -182,22 +219,65 @@
 </dialog>
 
 <script>
-const KEY = "manhwaTracker_v1";
+const KEY = "manhwaTracker_v2";
+const ANILIST_URL = "https://graphql.anilist.co";
 let manhwa = JSON.parse(localStorage.getItem(KEY) || "[]");
+let currentUser = null;
+let authMode = "signin";
+let supabaseClient = null;
 
-function saveData() {
+if (window.supabase && window.SUPABASE_URL && window.SUPABASE_ANON_KEY &&
+    !window.SUPABASE_URL.includes("YOUR_") && !window.SUPABASE_ANON_KEY.includes("YOUR_")) {
+  supabaseClient = window.supabase.createClient(window.SUPABASE_URL, window.SUPABASE_ANON_KEY);
+}
+
+function saveLocalData() {
   localStorage.setItem(KEY, JSON.stringify(manhwa));
+}
+
+async function saveData() {
+  saveLocalData();
+  if (!supabaseClient || !currentUser) return;
+  const rows = manhwa.map(m => ({
+    id: m.id,
+    user_id: currentUser.id,
+    title: m.title,
+    reading_status: m.status,
+    publication_status: m.publicationStatus || "UNKNOWN",
+    rating: Number(m.rating || 0),
+    notes: m.notes || "",
+    cover: m.cover || "",
+    updated_at: new Date().toISOString()
+  }));
+  const { error } = await supabaseClient.from("manhwa").upsert(rows, { onConflict: "id" });
+  if (error) console.error("Cloud save failed:", error);
 }
 
 function stars(n) {
   return n ? "★".repeat(n) + "☆".repeat(5-n) : "Not rated";
 }
 
+function pubLabel(status) {
+  return ({
+    ONGOING: "🟢 Ongoing",
+    FINISHED: "🔵 Finished",
+    HIATUS: "🟡 Hiatus",
+    UNKNOWN: "⚪ Unknown"
+  })[status] || "⚪ Unknown";
+}
+
+function pubClass(status) {
+  return ({ONGOING:"ongoing", FINISHED:"finished", HIATUS:"hiatus", UNKNOWN:"unknown"})[status] || "unknown";
+}
+
 function render() {
   const q = document.getElementById("search").value.toLowerCase().trim();
   const f = document.getElementById("filter").value;
+  const pf = document.getElementById("publicationFilter").value;
   const items = manhwa.filter(m =>
-    m.title.toLowerCase().includes(q) && (f === "all" || m.status === f)
+    m.title.toLowerCase().includes(q) &&
+    (f === "all" || m.status === f) &&
+    (pf === "all" || (m.publicationStatus || "UNKNOWN") === pf)
   );
 
   document.getElementById("total").textContent = manhwa.length;
@@ -223,7 +303,10 @@ function render() {
         : `<div class="placeholder">📖</div>`}
       <div class="card-body">
         <div class="title">${escapeHtml(m.title)}</div>
-        <div class="meta">${escapeHtml(m.status)}</div>
+        <div class="badges">
+          <span class="badge reading">${escapeHtml(m.status)}</span>
+          <span class="badge ${pubClass(m.publicationStatus)}">${pubLabel(m.publicationStatus)}</span>
+        </div>
         <div class="stars">${stars(Number(m.rating))}</div>
         ${m.notes ? `<div class="notes">${escapeHtml(m.notes)}</div>` : ""}
         <div class="actions">
@@ -247,11 +330,13 @@ function openModal(id = null) {
   document.getElementById("modalTitle").textContent = id ? "Edit Manhwa" : "Add Manhwa";
   document.getElementById("preview").style.display = "none";
   document.getElementById("cover").value = "";
+  document.getElementById("lookupStatus").textContent = "Checks AniList by title.";
 
   if (id) {
     const m = manhwa.find(x => x.id === id);
     document.getElementById("title").value = m.title;
     document.getElementById("status").value = m.status;
+    document.getElementById("publicationStatus").value = m.publicationStatus || "UNKNOWN";
     document.getElementById("rating").value = m.rating;
     document.getElementById("notes").value = m.notes || "";
     if (m.cover) {
@@ -259,7 +344,8 @@ function openModal(id = null) {
       p.src = m.cover; p.style.display = "block";
     }
   } else {
-    document.querySelector("form").reset();
+    document.querySelector("#modal form").reset();
+    document.getElementById("publicationStatus").value = "ONGOING";
   }
 }
 
@@ -278,24 +364,78 @@ function previewCover(event) {
   reader.readAsDataURL(file);
 }
 
-function saveManhwa(event) {
+async function lookupPublicationStatus() {
+  const title = document.getElementById("title").value.trim();
+  const message = document.getElementById("lookupStatus");
+  if (!title) {
+    message.textContent = "Enter the manhwa title first.";
+    return;
+  }
+
+  message.textContent = "Checking AniList…";
+  const query = `
+    query ($search: String) {
+      Page(page: 1, perPage: 5) {
+        media(search: $search, type: MANGA) {
+          id
+          title { romaji english native }
+          status
+          coverImage { medium }
+        }
+      }
+    }`;
+
+  try {
+    const response = await fetch(ANILIST_URL, {
+      method: "POST",
+      headers: {"Content-Type":"application/json","Accept":"application/json"},
+      body: JSON.stringify({query, variables:{search:title}})
+    });
+    if (!response.ok) throw new Error("Lookup failed");
+    const data = await response.json();
+    const results = data?.data?.Page?.media || [];
+    if (!results.length) {
+      document.getElementById("publicationStatus").value = "UNKNOWN";
+      message.textContent = "No matching title found. You can set the status manually.";
+      return;
+    }
+
+    const result = results[0];
+    const mapped = result.status === "RELEASING" ? "ONGOING"
+      : result.status === "FINISHED" ? "FINISHED"
+      : result.status === "HIATUS" || result.status === "NOT_YET_RELEASED" ? "HIATUS"
+      : "UNKNOWN";
+
+    document.getElementById("publicationStatus").value = mapped;
+    if (!document.getElementById("cover").files.length && result.coverImage?.medium) {
+      // Keep cover optional; online cover is only used if the user chooses it manually.
+    }
+    message.textContent = `Found: ${result.title.english || result.title.romaji || title} — ${pubLabel(mapped)}.`;
+  } catch (error) {
+    console.error(error);
+    message.textContent = "Online lookup failed. You can choose the status manually.";
+  }
+}
+
+async function saveManhwa(event) {
   event.preventDefault();
   const id = document.getElementById("editId").value;
   const old = id ? manhwa.find(m => m.id === id) : null;
   const file = document.getElementById("cover").files[0];
 
-  const finish = cover => {
+  const finish = async cover => {
     const item = {
       id: id || crypto.randomUUID(),
       title: document.getElementById("title").value.trim(),
       status: document.getElementById("status").value,
+      publicationStatus: document.getElementById("publicationStatus").value,
       rating: Number(document.getElementById("rating").value),
       notes: document.getElementById("notes").value.trim(),
       cover: cover || (old ? old.cover : "")
     };
     if (id) manhwa = manhwa.map(m => m.id === id ? item : m);
     else manhwa.unshift(item);
-    saveData(); closeModal(); render();
+    await saveData(); closeModal(); render();
   };
 
   if (file) {
@@ -307,17 +447,139 @@ function saveManhwa(event) {
 
 function editManhwa(id) { openModal(id); }
 
-function deleteManhwa(id) {
+async function deleteManhwa(id) {
   const m = manhwa.find(x => x.id === id);
   if (confirm(`Delete "${m.title}" from your tracker?`)) {
     manhwa = manhwa.filter(x => x.id !== id);
-    saveData(); render();
+    saveLocalData();
+    if (supabaseClient && currentUser) {
+      const { error } = await supabaseClient.from("manhwa").delete().eq("id", id).eq("user_id", currentUser.id);
+      if (error) console.error("Cloud delete failed:", error);
+    }
+    render();
   }
 }
 
-render();
-</script>
+// ---------- Authentication + cloud sync ----------
+function updateAuthUI() {
+  const authBtn = document.getElementById("authBtn");
+  const signOutBtn = document.getElementById("signOutBtn");
+  const email = document.getElementById("accountEmail");
+  if (currentUser) {
+    authBtn.style.display = "none";
+    signOutBtn.style.display = "inline-block";
+    email.textContent = currentUser.email || "Signed in";
+  } else {
+    authBtn.style.display = "inline-block";
+    signOutBtn.style.display = "none";
+    email.textContent = supabaseClient ? "" : "Local mode";
+  }
+}
 
+function openAuthModal() {
+  authMode = "signin";
+  document.getElementById("authTitle").textContent = "Sign in";
+  document.getElementById("authSubmit").textContent = "Sign in";
+  document.getElementById("authToggle").textContent = "Need an account? Create one";
+  document.getElementById("authMessage").textContent = "";
+  document.getElementById("authModal").showModal();
+}
+
+function closeAuthModal() { document.getElementById("authModal").close(); }
+
+function toggleAuthMode() {
+  authMode = authMode === "signin" ? "signup" : "signin";
+  document.getElementById("authTitle").textContent = authMode === "signin" ? "Sign in" : "Create account";
+  document.getElementById("authSubmit").textContent = authMode === "signin" ? "Sign in" : "Create account";
+  document.getElementById("authToggle").textContent = authMode === "signin"
+    ? "Need an account? Create one" : "Already have an account? Sign in";
+}
+
+async function submitAuth(event) {
+  event.preventDefault();
+  const message = document.getElementById("authMessage");
+  if (!supabaseClient) {
+    message.textContent = "Cloud sign-in is not configured yet. Add your Supabase keys in config.js.";
+    return;
+  }
+  const email = document.getElementById("authEmail").value.trim();
+  const password = document.getElementById("authPassword").value;
+  message.textContent = "Please wait…";
+
+  const result = authMode === "signin"
+    ? await supabaseClient.auth.signInWithPassword({email, password})
+    : await supabaseClient.auth.signUp({email, password});
+
+  if (result.error) {
+    message.textContent = result.error.message;
+    return;
+  }
+
+  if (authMode === "signup" && !result.data.session) {
+    message.textContent = "Account created. Check your email if confirmation is enabled, then sign in.";
+    return;
+  }
+
+  currentUser = result.data.user;
+  closeAuthModal();
+  await loadCloudData();
+  updateAuthUI();
+  render();
+}
+
+async function signOut() {
+  if (supabaseClient) await supabaseClient.auth.signOut();
+  currentUser = null;
+  updateAuthUI();
+  render();
+}
+
+async function loadCloudData() {
+  if (!supabaseClient || !currentUser) return;
+  const { data, error } = await supabaseClient
+    .from("manhwa")
+    .select("*")
+    .eq("user_id", currentUser.id)
+    .order("updated_at", {ascending:false});
+
+  if (error) {
+    console.error("Cloud load failed:", error);
+    return;
+  }
+
+  manhwa = (data || []).map(row => ({
+    id: row.id,
+    title: row.title,
+    status: row.reading_status,
+    publicationStatus: row.publication_status || "UNKNOWN",
+    rating: Number(row.rating || 0),
+    notes: row.notes || "",
+    cover: row.cover || ""
+  }));
+  saveLocalData();
+}
+
+async function initAuth() {
+  if (!supabaseClient) {
+    updateAuthUI();
+    return;
+  }
+  const { data } = await supabaseClient.auth.getSession();
+  currentUser = data.session?.user || null;
+  if (currentUser) await loadCloudData();
+  updateAuthUI();
+
+  supabaseClient.auth.onAuthStateChange(async (_event, session) => {
+    currentUser = session?.user || null;
+    if (currentUser) await loadCloudData();
+    updateAuthUI();
+    render();
+  });
+}
+
+render();
+initAuth();
+</script>
 
 <script>
 let deferredInstallPrompt = null;
@@ -389,6 +651,32 @@ if ("serviceWorker" in navigator) {
   });
 }
 </script>
+
+
+<dialog id="authModal">
+  <div class="modal">
+    <h2 id="authTitle">Sign in</h2>
+    <p id="authHint" class="meta">Sign in to sync your tracker across devices.</p>
+    <form class="form" onsubmit="submitAuth(event)">
+      <div class="field">
+        <label>Email</label>
+        <input id="authEmail" type="email" required autocomplete="email" placeholder="you@example.com">
+      </div>
+      <div class="field">
+        <label>Password</label>
+        <input id="authPassword" type="password" required minlength="6" autocomplete="current-password" placeholder="At least 6 characters">
+      </div>
+      <div id="authMessage" class="meta"></div>
+      <div class="modal-actions">
+        <button type="button" class="secondary" onclick="closeAuthModal()">Cancel</button>
+        <button id="authSubmit" type="submit">Sign in</button>
+      </div>
+    </form>
+    <button type="button" class="secondary" style="width:100%;margin-top:8px" onclick="toggleAuthMode()">
+      <span id="authToggle">Need an account? Create one</span>
+    </button>
+  </div>
+</dialog>
 
 </body>
 </html>
